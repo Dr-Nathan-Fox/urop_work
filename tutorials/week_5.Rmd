@@ -1,0 +1,143 @@
+---
+title: "week5"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Mapping social interactions
+
+Here we are going to use some functions from the [RedditExtractor](https://github.com/ivan-rivera/RedditExtractor) package. `RedditExtractor` has a function called `get_reddit` which provides similar functionality to the `reddit_search()` we just used from `photosearcher`. The `get_reddit()` function returns data in a slightly different way, which may not be user friendly, however the function has the added ability to specify a minimum number of comments. Using this additional variable we can find posts that have a large number of comments and therefore discussion around landscape or ecological features. Unfortunately, an update to the package got rid of this function so we will have to download an older version to access this feature.  
+
+```{r, eval = FALSE}
+#needed for mac users
+install.packages(c('devtools','curl'),
+                 repos = "http://cran.us.r-project.org") 
+
+require(devtools)
+install_version("RedditExtractoR", version = "2.1.5", repos = "http://cran.us.r-project.org")
+```
+
+```{r}
+library("RedditExtractoR")
+```
+
+Here we use this older code to return posts discussing the grand canyon from EarthPorn with more than 500 comments. Feel free to change this to any search that you are interested in!
+
+```{r}
+reddit_content <- get_reddit(
+  search_terms = "Grand Canyon",
+  subreddit = "EarthPorn",
+  cn_threshold = 500
+)
+```
+
+Once we have this data stored we can generate network maps of interactions between users.
+
+```{r}
+#large networks take long to generate so here we take the first 200 comments
+reddit_content <- reddit_content[1:200,] 
+
+#extract the information needed for the plot
+user <- user_network(reddit_content, 
+                     include_author = FALSE, 
+                     agg = TRUE)
+#plot the network
+user$plot
+```
+
+
+## Text sentiment
+
+Textual sentiment analysis assess the emotion expressed within a piece of text. This can be a powerful tool in understanding how people feel about the natural environment. As with previous task we need to download and  library the necersarry packages to perform these analysis.
+
+```{r}
+library(pacman)
+
+p_load("tidytext",
+       "textdata",
+       "dplyr")
+
+p_load_gh("ropensci/photosearcher")
+```
+
+The most basic textual sentiment analysis is performed by comparing words to a pre-defined dictionary. These dictionaries have been created by other researchers who manually attributed a value to the sentiment of individual word. Today we will look at three dictionaries AFINN, bing and ncr. 
+
+First, the AFINN dictionary [(Nielsen 2011)](https://arxiv.org/abs/1103.2903) ranks words on a scale of -5 to +5. Words negatively ranked are those with a negative associated sentiment and those with a positive rank are associated with a positive sentiment. While the number represents the magnitude of sentiment (e.g., +5 is more positive than +3).
+
+```{r}
+get_sentiments("afinn")
+```
+
+Second, the bing dictionary [Liu et al. ](https://www.morganclaypool.com/doi/abs/10.2200/s00416ed1v01y201204hlt016?casa_token=zVb-dykzCngAAAAA:joawB4fnvH6TWALFJeKJS8HiQQ07g920cdnjogMvSesova-GyXExeT7wwFkW2C6XjppwyThDHA) ranks word in a binary fashion of either positive of negative.
+
+```{r}
+get_sentiments("bing")
+```
+
+Third, the ncr dictionary [Mohammad and Turney 2010,](https://arxiv.org/pdf/1308.6297.pdf) categories word into different emotions: positive, negative, anger, anticipation, disgust, fear, joy, sadness, surprise, and trust.
+
+```{r}
+get_sentiments("nrc")
+```
+
+You may have noticed, not only do these dictionaries have different methods of measuring sentiment, they also have a different number of categorized words. This makes each dictionary good for different purposes. It has been demonstrated that AFINN is a good dictionary for evaluating social media data, so lets focus on that for now. 
+
+### AFINN and Flickr text
+
+Lets get some Flickr data. Feel free to change the word mountains to anything you are interested in!
+
+```{r}
+flickr_text <- photo_search(text = "mountain",
+                            mindate_taken = "2022-01-01",
+                            maxdate_taken = "2022-01-08")
+```
+
+Now lets merge all the text associated with the post (title, tags and description) into a single column. As the Flickr data is messy and contains lots of missing data we first create our own unique function called `paste2()`. For now lets not worry about the details of this function, but by doing `paste2 <- function(){}` we are telling R to create a new function called `paste2()` that carries out any code in the `{}` on the data defined in the `()`. To create a new column we can just use the `$` followed by a name of a column that doesn't already exist, and then tell R what to place in this column
+
+```{r}
+#function to paste without copying NAs
+paste2 <- function(...,sep=", ") {
+  L <- list(...)
+  L <- lapply(L,function(x) {x[is.na(x)] <- ""; x})
+  gsub(paste0("(^",sep,"|",sep,"$)"),"",
+       gsub(paste0(sep,sep),sep,
+            do.call(paste,c(L,list(sep=sep)))))
+}
+#here we create a new column called text and paste in all the other text from that row
+flickr_text$text <- paste2(flickr_text$title, 
+                           flickr_text$description, 
+                           flickr_text$tags) 
+#lets inspect
+head(flickr_text$text)
+```
+
+Finally, we need to use the AFINN dictionary to assess the sentiment of each word in the new 'text' column. 
+
+The easiest way to do this is separate each piece of text into the individual words on a new row. 
+
+```{r}
+#unnest words - one row per word
+flickr_text <- flickr_text %>%
+  unnest_tokens(word, text) #col called word which matches afinn dictionary
+
+head(flickr_text$word)
+```
+
+Next we add the dictionary sentiment value as a new row next to it. As both our data and the AFINN dictionary have a column called 'word' we can match our words to the values in the dictionary. This is achieved through the  `inner_join(get_sentiments("afinn")`. We then need to sum all the values for each individual photograph back up.This is achieved by the following lines of code: `group_by(url_l) %>% summarise(sentiment = sum(value))`
+
+In these parts of the code we are using `%>%` to tell R to remember the first piece of data and apply the following functions to it in a step-by-step way. This is a bit complicated but all covered in a short amount of code, so please ask for clarification if needed!
+
+```{r}
+#data frame of sum sentiment per photo 
+afinn <- flickr_text %>% #select our data
+  inner_join(get_sentiments("afinn")) %>% # afinn values as a new column
+  group_by(url_l) %>% #tell R to treat each unique url as a group
+  summarise(sentiment = sum(value)) #sum the sentiment value of that group
+
+head(afinn)
+```
+
+And there we have it, a summaries of the expressed sentiment for each photograph uploaded of a mountain in the first week of January. We can combine this with the spatial elements.
