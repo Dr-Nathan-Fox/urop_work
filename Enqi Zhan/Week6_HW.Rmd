@@ -1,0 +1,124 @@
+---
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+title: "week6 HW"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, eval = FALSE}
+#needed for mac users
+install.packages(c('devtools','curl'),
+                 repos = "http://cran.us.r-project.org") 
+
+require(devtools)
+install_version("RedditExtractoR", version = "2.1.5", repos = "http://cran.us.r-project.org")
+```
+```{r}
+install.packages(c("ggplot2",
+                 "sf"
+                 ,"rnaturalearth"
+                 ,"rnaturalearthdata"
+                 ,"dplyr"))
+
+library("ggplot2")
+library("sf")
+library("rnaturalearth")
+library("rnaturalearthdata")
+library("dplyr")
+
+
+```
+
+```{r}
+library("RedditExtractoR")
+```
+
+```{r}
+install.packages(c("tidytext", "textdata"))
+library("tidytext")
+library("textdata")
+library("photosearcher")
+```
+
+```{r}
+reddir_search <- get_reddit(search_terms = "GreatLakes Water Pollution", 
+                            cn_threshold = 500)
+
+```
+
+```{r}
+reddit_filter <- reddir_search[1:1796,]
+
+```
+
+
+
+```{r}
+get_sentiments("afinn")
+
+```
+
+
+
+```{r}
+paste2 <- function(..., sep=", ") {
+  L <- list(...)
+  L <- lapply(L,function(x) {x[is.na(x)] <- ""; x})
+  gsub(paste0("(^",sep,"|",sep,"$)"),"",
+       gsub(paste0(sep,sep),sep,
+            do.call(paste,c(L,list(sep=sep)))))
+}
+
+```
+
+```{r}
+flickr_pond <- photo_search(text = "pond", mindate_taken = "2021-01-01", maxdate_taken = "2022-01-01", bbox = "-89.604492,40.713956,-78.002930,47.517201") 
+
+```
+
+```{r}
+flickr_pond$text <- paste2(flickr_pond$title,
+                           flickr_pond$description,
+                           flickr_pond$tags)
+
+head(flickr_pond$text)
+```
+```{r}
+flickr_pond <- flickr_pond |>
+  unnest_tokens(word, text)
+
+head(flickr_pond$word)
+
+```
+```{r}
+
+sentiment_data <- flickr_pond |>
+  inner_join(get_sentiments("afinn")) |>
+  group_by(url_l, latitude, longitude) |>
+  summarize(sentiment = sum(value)) 
+
+head(sentiment_data)
+```
+```{r}
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+ggplot(data = world) + geom_sf(color = "black", fill = "gray") + coord_sf(xlim = c(-89.604492,-78.002930), ylim = c(40.713956, 47.517201), expand = FALSE)+ geom_point(data = sentiment_data, aes(x = longitude, y = latitude, color = sentiment))
+
+
+```
+
+
+
+
+
+
+
+
+
