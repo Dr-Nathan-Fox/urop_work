@@ -1,0 +1,109 @@
+---
+title: "week_5_"
+author: "Luning Wang"
+date: "2022-11-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library("RedditExtractoR")
+library("devtools")
+library("curl")
+library("tidytext")
+library("textdata")
+library("photosearcher")
+
+library("ggplot2")
+library("sf")
+library("rnaturalearth")
+library("rnaturalearthdata")
+library("dplyr")
+library("photosearcher")
+library("ggspatial")
+```
+
+```{r}
+#needed for mac users
+install.packages(c('devtools','curl'),
+                 repos = "http://cran.us.r-project.org") 
+
+require(devtools)
+install_version("RedditExtractoR", version = "2.1.5", repos = "http://cran.us.r-project.org")
+```
+
+##3
+```{r}
+reddir_pines <- get_reddit(search_terms = "pines", 
+                            cn_threshold = 500)
+
+reddit_pines <- reddit_pines[1:200,]
+
+user <- user_network(reddit_pines, 
+                     include_author = FALSE, 
+                     agg = TRUE)
+```
+```{r}
+get_sentiments("afinn")
+```
+
+```{r}
+#function to paste without copying NAs
+paste2 <- function(...,sep=", ") {
+  L <- list(...)
+  L <- lapply(L,function(x) {x[is.na(x)] <- ""; x})
+  gsub(paste0("(^",sep,"|",sep,"$)"),"",
+       gsub(paste0(sep,sep),sep,
+            do.call(paste,c(L,list(sep=sep)))))
+}
+```
+
+```{r}
+#here we create a new column called text and paste in all the other text from that row
+reddit_pines$text <- paste2(reddit_pines$title, 
+                           reddit_pines$description, 
+                           reddit_pines$tags) 
+#lets inspect
+head(reddit_pines$text)
+```
+
+##4
+```{r}
+flickr_koala <- photo_search(mindate_taken = "2021-01-01",
+                              maxdate_taken = "2021-06-01",
+                              text = "koala",
+                              bbox = "114.144516,-39.442557,155.804672,-12.562606")
+```
+
+```{r}
+flickr_koala$text <- paste2(flickr_koala$title,
+                           flickr_koala$description,
+                           flickr_koala$tags)
+
+head(flickr_koala$text)
+```
+
+```{r}
+flickr_koala <- flickr_koala %>%
+  unnest_tokens(word, text) #col called word which matches afinn dictionary
+
+head(flickr_koala$word)
+```
+
+```{r}
+sentiment_koala <- flickr_koala %>% #select our data
+  inner_join(get_sentiments("afinn")) %>% # afinn values as a new column
+  group_by(url_l, latitude, longitude) %>% #tell R to treat each unique url as a group
+  summarise(sentiment = sum(value)) #sum the sentiment value of that group
+
+head(sentiment_koala)
+```
+
+```{r}
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+ggplot() + 
+  geom_sf(data = world, color = "black", fill = "white") + 
+  coord_sf(xlim = c(114.144516,155.804672), ylim = c(-39.442557,-12.562606), expand = FALSE) +
+  geom_point(data = sentiment_koala, aes(x = longitude, y = latitude, color = sentiment))
+```
