@@ -20,6 +20,8 @@ install.packages(c('devtools','curl'),
 require(devtools)
 install_version("RedditExtractoR", version = "2.1.5", repos = "http://cran.us.r-project.org")
 ```
+
+
 ```{r}
 install.packages(c("ggplot2",
                  "sf"
